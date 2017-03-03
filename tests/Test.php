@@ -1,6 +1,7 @@
 <?php
 
-require_once __DIR__.'/../src/SimpleAuth.php';
+require_once __DIR__ . '/../vendor/autoload.php';
+require_once __DIR__ . '/../src/SimpleAuth.php';
 
 class Test extends PHPUnit_Framework_TestCase
 {
@@ -15,7 +16,7 @@ class Test extends PHPUnit_Framework_TestCase
         'db_name' => 'simple_auth_test',
         );
 
-        $this->simpleAuth = new SimpleAuth($params);
+        $this->simpleAuth = new SimpleAuth\SimpleAuth($params);
     }
 
     public function testCreateUser()
@@ -57,5 +58,5 @@ class Test extends PHPUnit_Framework_TestCase
         //Correct credentials:
         $this->assertFalse($this->simpleAuth->login('test@email.com', 'new_password')['success']);
     }
-    
+
 }

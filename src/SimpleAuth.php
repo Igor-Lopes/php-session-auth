@@ -1,5 +1,8 @@
 <?php
 
+    namespace SimpleAuth;
+    use PDO;
+
     class SimpleAuth
     {
         private $conn;
