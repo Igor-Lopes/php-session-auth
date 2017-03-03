@@ -1,0 +1,13 @@
+{
+    "name": "igor/php-simple-auth",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Igor Lopes",
+            "email": "igor@nucleus.eti.br"
+        }
+    ],
+    "minimum-stability": "dev",
+    "require": {}
+}
