@@ -1,370 +1,189 @@
 <?php
 
-    require './vendor/autoload.php';
-
-    class SimpleAuth{
-
-        private $cookieExp;
-        private $sessionName;
-        private $secure;
-        private $httponly;
-
-        private $serverName;
-        private $Username;
-        private $password;
-        private $dbName;
+    class SimpleAuth
+    {
         private $conn;
 
-        private $host;
-        private $port;
-        private $SMTPSecure;
-        private $SMTPAuth;
-        private $from;
-        private $pwd;
-        private $subject;
-        private $wordWrap;
+        private $params;
 
-        public function __construct($params){
+        public function __construct(array $params = [])
+        {
+            $this->params = array(
+              'secure' => false,
+              'httponly' => false,
+              'db_host' => 'localhost',
+              'db_user' => 'root',
+              'db_password' => 'root',
+              'db_name' => 'sindlife',
+              );
 
-            $this->cookieExp = $params['cookieExp'];
-            $this->sessionName = $params['sessionName'];
-            $this->secure = $params['secure'];
-            $this->httponly = $params['httponly'];
-
-            $this-> startSecureSession();
-
-            $this->host = $params['host'];
-            $this->port = $params['port'];
-            $this->SMTPSecure = $params['SMTPSecure'];
-            $this->SMTPAuth = $params['SMTPAuth'];
-            $this->from = $params['from'];
-            $this->pwd = $params['pwd'];
-            $this->subject = $params['subject'];
-            $this->wordWrap = $params['wordWrap'];
-            $this->serverName = $params['serverName'];
-            $this->Username = $params['userName'];
-            $this->password = $params['password'];
-            $this->dbName = $params['dbName'];
-
-            $this->conn = new mysqli($this->serverName, $this->Username, $this->password, $this->dbName);
+            $this->params = array_replace($this->params, $params);
+            $connString = 'mysql:host='.$this->params['db_host'].';dbname='.$this->params['db_name'];
+            $this->conn = new PDO($connString, $this->params['db_user'], $this->params['db_password']);
         }
 
-        public function startSecureSession(){
-            if (ini_set('session.use_cookies', 1) === false || ini_set('session.use_only_cookies', 1) === false || ini_set('session.use_trans_sid', 0) === false) {
-                exit();
+        public function createUser($Username, $email, $password)
+        {
+            if ($this->checkIfEmailExists($email)) {
+                $return['success'] = false;
+                $return['message'] = 'Email already exists';
+
+                return $return;
+            } else {
+                $password = hash('sha512', $password);
+                $password = password_hash($password, PASSWORD_BCRYPT);
+
+                $stmt = $this->conn->prepare('INSERT INTO `users` (Username, email, password) VALUES (:Username, :email, :password)');
+                $stmt->bindParam(':Username', $Username, PDO::PARAM_STR);
+                $stmt->bindParam(':email', $email, PDO::PARAM_STR);
+                $stmt->bindParam(':password', $password, PDO::PARAM_STR);
+                $stmt->execute();
+
+                $return['success'] = true;
+                $return['message'] = 'User successful created';
+                $return['username'] = $Username;
+                $return['userId'] = $this->conn->lastInsertId();
+                $return['email'] = $email;
+
+                return $return;
             }
-            $cookieParams = session_get_cookie_params();
-            session_set_cookie_params($this->cookieExp, $cookieParams['path'], $cookieParams['domain'], $this->secure, $this->httponly);
-            session_name($this->sessionName);
-            session_start();
-            session_regenerate_id(true);
         }
 
-        public function createUser($Username, $email, $password){
-            $password = hash('sha512', $password);
-            $password = password_hash($password, PASSWORD_BCRYPT);
-            $stmt = $this->conn->prepare("INSERT INTO users (Username, email, password) VALUES (?, ?, ?)");
-            $stmt->bind_param('sss', $Username, $email, $password);
+        public function updatePassword($email, $currentPassword, $newPassword)
+        {
+            $stmt = $this->conn->prepare('SELECT `user_id`, `Username`, `password`, `is_active` FROM `users` WHERE `email` = :email LIMIT 1');
+            $stmt->bindParam(':email', $email, PDO::PARAM_STR);
             $stmt->execute();
-            $userId = $this->getUserByEmail($email);
-            $this->addRequest($userId, 'A', $email);
+
+            $result = $stmt->fetch(PDO::FETCH_OBJ);
+            $currentPassword = hash('sha512', $currentPassword);
+
+            if ($stmt->rowCount() == 0) {
+                $return['success'] = false;
+                $return['message'] = 'Email not found';
+
+                return $return;
+            }
+            if (password_verify($currentPassword, $result->password)) {
+                $newPassword = hash('sha512', $newPassword);
+                $newPassword = password_hash($newPassword, PASSWORD_BCRYPT);
+
+                $stmt = $this->conn->prepare('UPDATE `users` SET `password` = :newPassword WHERE `email` = :email');
+                $stmt->bindParam(':newPassword', $newPassword, PDO::PARAM_STR);
+                $stmt->bindParam(':email', $email, PDO::PARAM_STR);
+                $stmt->execute();
+
+                $return['success'] = true;
+                $return['message'] = 'Password Updated';
+
+                return $return;
+            } else {
+                $return['success'] = false;
+                $return['message'] = "Current password doesn't match ";
+
+                return $return;
+            }
         }
 
-        public function getUserByEmail($email){
-            $stmt = $this->conn->prepare("SELECT user_id FROM users WHERE email = ? LIMIT 1");
-            $stmt->bind_param('s', $email);
+        private function checkIfEmailExists($email)
+        {
+            $stmt = $this->conn->prepare('SELECT * FROM `users` WHERE `email` = :email');
+            $stmt->bindParam(':email', $email, PDO::PARAM_STR);
             $stmt->execute();
-            $stmt->store_result();
-            $stmt->bind_result($userId);
-            $stmt->fetch();
 
-            return $userId;
-        }
-
-        public function getUserId($hash){
-            $stmt = $this->conn->prepare("SELECT user_id FROM sessions WHERE hash = ? LIMIT 1");
-            $stmt->bind_param('s', $hash);
-            $stmt->execute();
-            $stmt->store_result();
-            $stmt->bind_result($userId);
-            $stmt->fetch();
-
-            return $userId;
-        }
-
-        public function getUsername($hash){
-            $stmt = $this->conn->prepare("SELECT Username FROM users INNER JOIN sessions on users.user_id = sessions.user_id AND sessions.hash = ?;");
-            $stmt->bind_param('s', $hash);
-            $stmt->execute();
-            $stmt->store_result();
-            $stmt->bind_result($Username);
-            $stmt->fetch();
-
-            return $Username;
-        }
-
-        public function getUserEmail($hash){
-            $stmt = $this->conn->prepare("SELECT email FROM sessions WHERE hash = ? LIMIT 1");
-            $stmt->bind_param('s', $hash);
-            $stmt->execute();
-            $stmt->store_result();
-            $stmt->bind_result($email);
-            $stmt->fetch();
-
-            return $email;
-        }
-
-        private function checkUserEmail($email){
-            $stmt = $this->conn->prepare("SELECT * FROM users WHERE email = ?");
-            $stmt->bind_param('s', $email);
-            $stmt->execute();
-            $stmt->store_result();
-
-            return $stmt->num_rows;
-        }
-
-        public function login($email, $password){
-            $stmt = $this->conn->prepare("SELECT user_id, Username, password, is_active FROM users WHERE email = ? LIMIT 1");
-            $stmt->bind_param('s', $email);
-            $stmt->execute();
-            $stmt->store_result();
-            $stmt->bind_result($userId, $Username, $dbPassword, $isActive);
-            $stmt->fetch();
-            $password = hash('sha512', $password);
-            $brute = $this->checkBrute($userId, $email) ? 'true' : 'false';
-
-            if ($stmt->num_rows == 1 && $isActive == 'Y' && $brute == 'false' && password_verify($password, $dbPassword)) {
-                $userBrowser = $_SERVER['HTTP_USER_AGENT'];
-                $userId = preg_replace('/[^0-9]+/', '', $userId);
-                $Username = preg_replace("/[^a-zA-Z0-9_\-]+/", '', $Username);
-                $_SESSION['Username'] = $Username;
-                $_SESSION['loginString'] = hash('sha512', $dbPassword.$userBrowser);
-
-                $ip = $this->getIpAddress();
-
-                $fingerPrint = $this->getRandomKey(16);
-
-                $_SESSION['fp'] = hash('sha256', $fingerPrint);
-
-                $cookieParams = session_get_cookie_params();
-
-                setcookie('fp', $fingerPrint, $cookieParams['lifetime'], $cookieParams['path'], $cookieParams['domain'], false, true);
-
-                session_regenerate_id();
-
-                $this->deleteSessions($_SESSION['loginString'], $userId);
-                $this->deleteAttempts($userId);
-                $this->addSession($userId, $_SESSION['loginString'], $ip);
-
+            if ($stmt->rowCount() == 1) {
                 return true;
             } else {
-                $this->addAttempt($userId);
                 return false;
             }
-            return false;
         }
 
-        public function checkBrute($userId, $email){
-            $currentDate = strtotime(date('Y-m-d H:i:s'));
-            $stmt = $this->conn->prepare("SELECT expire_time FROM attempts WHERE user_id = ? AND expire_time > '$currentDate'");
-            $stmt->bind_param('i', $userId);
+        public function login($email, $password)
+        {
+            $stmt = $this->conn->prepare('SELECT `user_id`, `Username`, `password`, `is_active` FROM `users` WHERE `email` = :email LIMIT 1');
+            $stmt->bindParam(':email', $email, PDO::PARAM_STR);
             $stmt->execute();
-            $stmt->store_result();
 
-            if ($stmt->num_rows >= 5) {
-                $this->addRequest($userId, 'R', $email);
-                return true;
+            $result = $stmt->fetch(PDO::FETCH_OBJ);
+            $password = hash('sha512', $password);
+
+            if ($stmt->rowCount() == 0) {
+                $return['success'] = false;
+                $return['message'] = 'Invalid credentials';
+
+                return $return;
             }
-            return false;
+
+            if ($result->is_active == 'N') {
+                $return['success'] = false;
+                $return['message'] = 'Account is not Active';
+
+                return $return;
+            }
+
+            if ($this->checkBrute($result->user_id, $email)) {
+                $return['success'] = false;
+                $return['message'] = 'Account is locked';
+
+                return $return;
+            }
+
+            if (password_verify($password, $result->password)) {
+                $this->deleteAttempts($result->user_id);
+                $return['success'] = true;
+                $return['message'] = 'Login successful';
+
+                return $return;
+            } else {
+                $this->addAttempt($result->user_id);
+                $return['success'] = false;
+                $return['message'] = 'Invalid credentials';
+
+                return $return;
+            }
         }
 
-        private function addAttempt($userId){
+        private function checkBrute($userId, $email)
+        {
+            $currentDate = strtotime(date('Y-m-d H:i:s'));
+
+            $stmt = $this->conn->prepare('SELECT `expire_time` FROM `attempts` WHERE `user_id` = :userId AND `expire_time` > :currentDate');
+            $stmt->bindParam(':userId', $userId, PDO::PARAM_INT);
+            $stmt->bindParam(':currentDate', $currentDate, PDO::PARAM_STR);
+            $stmt->execute();
+
+            if ($stmt->rowCount() >= 5) {
+                return true;
+            } else {
+                return false;
+            }
+        }
+
+        private function addAttempt($userId)
+        {
             $expireTime = strtotime(date('Y-m-d H:i:s', strtotime('+5 minutes')));
             $ip = $this->getIpAddress();
-            $this->conn->query("INSERT INTO attempts(user_id, ip, expire_time) VALUES ('$userId', '$ip', '$expireTime')");
-        }
 
-        private function deleteAttempts($userId){
-            $this->conn->query("DELETE FROM attempts WHERE user_id = '$userId';");
-        }
-
-        public function isAuthenticated(){
-            if (isset($_SESSION['Username'], $_SESSION['loginString'], $_SESSION['fp'])) {
-                $userId = $this->getUserId($_SESSION['loginString']);
-                $loginString = $_SESSION['loginString'];
-                $Username = $_SESSION['Username'];
-                $userBrowser = $_SERVER['HTTP_USER_AGENT'];
-                $ip = $this->getIpAddress();
-
-                $stmt = $this->conn->prepare("SELECT password FROM users WHERE user_id = ? LIMIT 1");
-                $stmt->bind_param('i', $userId);
-                $stmt->execute();
-                $stmt->store_result();
-
-                if ($stmt->num_rows == 1) {
-                    $stmt->bind_result($password);
-                    $stmt->fetch();
-                    $login_check = hash('sha512', $password.$userBrowser);
-
-                    if (hash_equals($login_check, $loginString) && $this->checkDbSession($loginString) && $this->checkFingerPrint()) {
-                        return true;
-                    }
-                }
-            }
-
-            return false;
-        }
-
-        private function checkDbSession($hash){
-            $ip = $this->getIpAddress();
-            $currentDate = strtotime(date('Y-m-d H:i:s'));
-
-            $stmt = $this->conn->prepare("SELECT user_id, ip, expire_date FROM sessions WHERE hash = ? LIMIT 1");
-            $stmt->bind_param('s', $hash);
+            $stmt = $this->conn->prepare('INSERT INTO `attempts` (user_id, ip, expire_time) VALUES (:userId, :ip, :expireTime)');
+            $stmt->bindParam(':userId', $userId, PDO::PARAM_INT);
+            $stmt->bindParam(':ip', $ip, PDO::PARAM_STR);
+            $stmt->bindParam(':expireTime', $expireTime, PDO::PARAM_STR);
             $stmt->execute();
-            $stmt->store_result();
-            $stmt->bind_result($userId, $ipDB, $expireDate);
-            $stmt->fetch();
-
-            $expireDate = strtotime($expireDate);
-
-            if ($stmt->num_rows == 1) {
-                if ($ip == $ipDB && $currentDate < $expireDate) {
-                    return true;
-                } else {
-                    $this->deleteSessions($hash, $userId);
-                }
-            }
-
-            return false;
         }
 
-        public function logout(){
-            $hash = $_SESSION['loginString'];
-            $userId = $this->getUserId($hash);
-            $this->deleteSessions($hash, $userId);
-            $_SESSION = array();
-            $params = session_get_cookie_params();
-            setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'], $params['secure'], $params['httponly']);
-            session_destroy();
+        private function deleteAttempts($userId)
+        {
+            $stmt = $this->conn->prepare('DELETE FROM `attempts` WHERE `user_id` = :userId');
+            $stmt->bindParam(':userId', $userId, PDO::PARAM_INT);
+            $stmt->execute();
         }
 
-        private function addSession($userId, $hash, $ip){
-            $sessExpire = date('Y-m-d H:i:s', strtotime('+5 minutes'));
-            $insertSession = "INSERT INTO sessions (user_id, hash, expire_date, ip) VALUES ( '$userId','$hash','$sessExpire' , '$ip'); ";
-            $this->conn->query($insertSession);
-        }
-
-        private function deleteSessions($hash, $userId){
-            $currentDate = date('Y-m-d H:i:s');
-            $deleteSess = "DELETE FROM sessions WHERE hash = '$hash'; ";
-            $deleteSessExp = "DELETE FROM sessions WHERE expire_date < '$currentDate'; ";
-            $this->conn->query($deleteSess);
-            $this->conn->query($deleteSessExp);
-        }
-
-        public function addRequest($userId, $type, $email){
-            $reqKey = $this->getRandomKey(10);
-            $expireDate = date('Y-m-d H:i:s', strtotime('+120 minutes'));
-            $this->deleteRequests($userId, $type);
-
-            if ($this->conn->query("INSERT INTO requests(user_id, request_key, expire_date, type) VALUES ('$userId', '$reqKey', '$expireDate', '$type')")) {
-                $this->sendActivation($reqKey, $email);
-                return true;
-            } else {
-                return false;
-            }
-        }
-
-        public function sendActivation($reqKey, $email){
-            $url = 'http://yoururlhere.com/request='.$reqKey;
-
-            $mail = new PHPMailer();
-            $mail->IsSMTP();
-            $mail->Host = $this->host;
-            $mail->Port = 465;
-            $mail->SMTPSecure = 'ssl';
-            $mail->SMTPAuth = true;
-            $mail->Username = $this->from;
-            $mail->Password = $this->pwd;
-            $mail->setFrom($this->from, 'PHP Simple Auth - Activate your account');
-            $mail->addAddress($email);
-
-            $mail->Subject = 'Angular Auth - Activate your account';
-            $mail->msgHTML('<html><h1>Please click on the link below
-            to activate your account</p>' ."<a href='{$url}'>{$url}</a></html>");
-            $mail->WordWrap = 50;
-
-            if ($mail->Send()) {
-                return true;
-            } else {
-                return false;
-            }
-        }
-
-        public function activateUser($reqKey){
-            $stmt = $this->conn->prepare("SELECT user_id, expire_date FROM requests WHERE request_key = ? AND type = 'A'");
-            $stmt->bind_param('s', $reqKey);
-            if(!$stmt->execute()){
-              echo $stmt-> error;
-            }
-            $stmt->store_result();
-            $stmt->bind_result($userId, $expireDate);
-            $stmt->fetch();
-
-            $currTime = strtotime(date('Y-m-d H:i:s'));
-            $expireTime = strtotime($expireDate);
-
-            if ($stmt->num_rows == 1 && $currTime < $expireTime) {
-                $this->setUserActive($userId);
-                $this->deleteRequests($userId, 'A');
-
-                return true;
-            }
-
-            return false;
-        }
-
-        private function setUserActive($userId){
-            if ($this->conn->query("UPDATE users SET is_active = 'Y' WHERE user_id = '$userId'")) {
-                return true;
-            }
-            return false;
-        }
-
-        public function deleteRequests($userId, $type){
-            $this->conn->query("DELETE FROM requests WHERE user_id = '$userId' AND type = '$type'");
-        }
-
-        private function getIpAddress(){
+        private function getIpAddress()
+        {
             if (isset($_SERVER['HTTP_X_FORWARDED_FOR']) && $_SERVER['HTTP_X_FORWARDED_FOR'] != '') {
                 return $_SERVER['HTTP_X_FORWARDED_FOR'];
             } else {
                 return $_SERVER['REMOTE_ADDR'];
-            }
-        }
-
-        /* Function Credit (Adapted): Devshed - Making PHP sessions secure: http://goo.gl/uaDMxp */
-        private function getRandomKey($num_bytes){
-            if (!is_int($num_bytes) || $num_bytes <= 0) {
-                throw new Exception('Argument must be a positive integer.');
-            }
-            if (function_exists('openssl_random_pseudo_bytes')) {
-                $raw_random = openssl_random_pseudo_bytes($num_bytes);
-            } elseif (function_exists('mcrypt_create_iv')) {
-                $raw_random = mcrypt_create_iv($num_bytes, MCRYPT_DEV_URANDOM);
-            } else {
-                throw new Exception('OpenSSL or Mcrypt extension required.');
-            }
-
-            return bin2hex($raw_random);
-        }
-
-        private function checkFingerPrint(){
-            if (hash('sha256', $_COOKIE['fp']) == $_SESSION['fp']) {
-                return true;
-            } else {
-                return false;
             }
         }
     }
