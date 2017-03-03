@@ -15,6 +15,7 @@
               'db_user' => 'root',
               'db_password' => 'root',
               'db_name' => 'sindlife',
+              'num_attempts' => 5
               );
 
             $this->params = array_replace($this->params, $params);
@@ -152,7 +153,7 @@
             $stmt->bindParam(':currentDate', $currentDate, PDO::PARAM_STR);
             $stmt->execute();
 
-            if ($stmt->rowCount() >= 5) {
+            if ($stmt->rowCount() >= $this->params['num_attempts']) {
                 return true;
             } else {
                 return false;
