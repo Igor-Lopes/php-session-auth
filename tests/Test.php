@@ -55,6 +55,6 @@ class Test extends PHPUnit_Framework_TestCase
             $this->simpleAuth->login('test@email.com', 'incorrect');
         }
         //Correct credentials:
-        $this->assertFalse($this->simpleAuth->login('test@email.com', 'test')['success']);
+        $this->assertFalse($this->simpleAuth->login('test@email.com', 'new_password')['success']);
     }
 }

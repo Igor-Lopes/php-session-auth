@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS `users` (
      `user_id` INT AUTO_INCREMENT PRIMARY KEY,
      `username` VARCHAR(255) NOT NULL,
      `email` VARCHAR(255) NOT NULL UNIQUE,
-     `is_active` ENUM ('Y','N') DEFAULT 'N',
+     `is_active` ENUM ('Y','N') DEFAULT 'Y',
      `password` CHAR(128) NOT NULL
 );
 CREATE TABLE IF NOT EXISTS attempts (

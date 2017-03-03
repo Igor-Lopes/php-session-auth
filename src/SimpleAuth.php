@@ -34,10 +34,9 @@
                 $password = hash('sha512', $password);
                 $password = password_hash($password, PASSWORD_BCRYPT);
                 //Activate account by default.
-                $stmt = $this->conn->prepare('INSERT INTO `users` (Username, email, is_active, password) VALUES (:Username, :email, :isActive, :password)');
+                $stmt = $this->conn->prepare('INSERT INTO `users` (Username, email, password) VALUES (:Username, :email, :password)');
                 $stmt->bindParam(':Username', $Username, PDO::PARAM_STR);
                 $stmt->bindParam(':email', $email, PDO::PARAM_STR);
-                $stmt->bindParam(':isActive', 'Y', PDO::PARAM_STR);
                 $stmt->bindParam(':password', $password, PDO::PARAM_STR);
                 $stmt->execute();
 
