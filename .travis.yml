@@ -15,6 +15,7 @@ test:
   encoding: utf8
 
 before_install:
+  - composer install
   - mysql -e 'CREATE DATABASE simple_auth_test;'
   - mysql -u root simple_auth_test < sql/tables.sql
 
