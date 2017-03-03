@@ -1,6 +1,6 @@
 <?php
 
-require_once '../src/SimpleAuth.php';
+require_once __DIR__ . '/../src/SimpleAuth.php';
 
 class Test extends PHPUnit_Framework_TestCase{
 
