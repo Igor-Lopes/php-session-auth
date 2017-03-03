@@ -19,6 +19,6 @@ class Test extends PHPUnit_Framework_TestCase{
 
     }
     public function testDbCon(){
-        $this->assertTrue($this->simpleAuth->createUser('Igor', 'test@email.com', 'test'));
+        $this->assertTrue($this->simpleAuth->createUser('Igor', 'test@email.com', 'test')['success']);
     }
 }
